@@ -1,0 +1,102 @@
+#include "pitches.h"
+
+unsigned long gcd(unsigned long a, unsigned long b) {
+  if (b > a) {
+    unsigned long tmp = b;
+    b = a;
+    a =  tmp;
+  }
+  while (b != 0) {
+    unsigned long r = a % b;
+    a = b;
+    b =  r;
+  }
+  return a;
+}
+
+int threshold = 200;
+int potentiometer_scale; // SET VALUE FOR ADC
+
+volatile bool note_active[8] = {false, false, false, false, false, false, false, false};
+int photoresistor_per_string[8];
+
+void check_strings() {
+  photoresistor_per_string[0] = analogRead(A0);
+  photoresistor_per_string[1] = analogRead(A1);
+  photoresistor_per_string[2] = analogRead(A2);
+  photoresistor_per_string[3] = analogRead(A3);
+  photoresistor_per_string[4] = analogRead(A4);
+  photoresistor_per_string[5] = analogRead(A5);
+  photoresistor_per_string[6] = analogRead(A6);
+  photoresistor_per_string[7] = analogRead(A7);
+  
+  for (int i = 1; i < 8; i++) {
+    if (photoresistor_per_string[i] >= threshold) {
+      note_active[i] = true;
+    }
+    else {
+      note_active[i] = false;
+    }
+  }
+}
+
+const int notes[7][8] = {
+    {NOTE_C4, NOTE_D4, NOTE_E4, NOTE_F4, NOTE_G4, NOTE_A4, NOTE_B4, NOTE_C5},
+    {NOTE_D4, NOTE_E4, NOTE_FS4, NOTE_G4, NOTE_A4, NOTE_B4, NOTE_CS5, NOTE_D5},
+    {NOTE_E4, NOTE_FS4, NOTE_GS4, NOTE_A4, NOTE_B4, NOTE_CS5, NOTE_DS5, NOTE_E5},
+    {NOTE_F4, NOTE_G4, NOTE_A4, NOTE_AS4, NOTE_C5, NOTE_D5, NOTE_E5, NOTE_F5},
+    {NOTE_G4, NOTE_A4, NOTE_B4, NOTE_C5, NOTE_D5, NOTE_E5, NOTE_FS5, NOTE_G5},
+    {NOTE_A4, NOTE_B4, NOTE_CS5, NOTE_D5, NOTE_E5, NOTE_FS5, NOTE_GS5, NOTE_A5},
+    {NOTE_B4, NOTE_CS5, NOTE_DS5, NOTE_E5, NOTE_FS5, NOTE_GS5, NOTE_AS5, NOTE_B5}
+  };
+
+volatile int sin_indexes_per_cycle[7][8];
+volatile int audio_index = 0;
+volatile unsigned char sine[4096];
+int scale_index = 0;
+
+void calculate_cycles() {
+  for (int i = 0; i < 7; i++) {
+    for (int j = 0; j < 8; j++) {
+        sin_indexes_per_cycle[i][j] = (int)(((float)((float)notes[i][j]*4096.0*4.0*256.0))/(float)(F_CPU));
+      }
+  }
+  for (int j = 0; j < 4096; j++) {
+     sine[j] = (unsigned char)(128.0 * (1.0 + sin(2*3.141592 /4096.0 * (float)j)));
+  }
+
+  CPU_CCP = CCP_IOREG_gc;
+  CLKCTRL.MCLKCTRLB = 3; // Set clock prescaler to 4
+
+  PORTMUX.TCBROUTEA = 1;
+  
+  TCB0.CTRLA = 1; // Enable TCB0
+  TCB0.CTRLB = 0x17; // Set TCB0 for 8-bit PWM
+  TCB0.CCMPL = 255; // Set interrupt period
+  TCB0.CCMPH = 128;
+  TCB0.INTCTRL = 1; // Enable capture interrupt
+}
+
+int val = 0;
+ISR(TCB0_INT_vect) {
+  TCB0.INTFLAGS = 1; // Clear TCB interrupt
+
+  int next_value = 0;
+  for (int j = 0; j < 8; j++) {
+    if (note_active[j]) {
+      next_value += sine[(audio_index * sin_indexes_per_cycle[scale_index][j]) & 0xfff] / 8;
+    }
+  }
+  audio_index++;
+  TCB0.CCMPH = next_value;
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(6, OUTPUT);
+  calculate_cycles();
+}
+
+void loop() {
+  check_strings();
+}
