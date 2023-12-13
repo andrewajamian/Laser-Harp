@@ -1,0 +1,50 @@
+#include "pitches.h"
+
+const int photoresistorPins[] = {A0, A1, A2, A3, A4, A5, A6, A7};
+const int numPhotoresistors = 8;
+const int speakerPin = 6;
+
+// Define the threshold values for each photoresistor
+int threshold[] = {200, 200, 200, 200, 200, 200, 200, 200};
+
+// Define the corresponding notes in a scale
+const int notes[] = {NOTE_GS3, NOTE_DS4, NOTE_B3, NOTE_FS4, NOTE_E4, NOTE_GS4, NOTE_DS5, NOTE_E5};
+    
+
+void setup() {
+  delay(500);
+  // Set up photoresistor pins as inputs
+  for (int i = 0; i < numPhotoresistors; i++) {
+    pinMode(photoresistorPins[i], INPUT);
+  }
+  
+  // Set up speaker pin as an output
+  pinMode(speakerPin, OUTPUT);
+
+  for (int j = 0; j < numPhotoresistors; j++) {
+    // Read the value from the photoresistor
+    int sensorValue = analogRead(photoresistorPins[j]);
+    threshold[j] = sensorValue + 75;
+  }
+}
+
+void loop() {
+  bool sensorHit = false;
+  for (int j = 0; j < numPhotoresistors; j++) {
+    // Read the value from the photoresistor
+    int sensorValue = analogRead(photoresistorPins[j]);
+  
+    // Check if the sensor value is above the threshold
+    if (sensorValue > threshold[j]) {
+      // Play the corresponding note
+      tone(speakerPin, notes[j]);
+      // Wait for a short duration to avoid rapid triggering
+      delay(75);
+      sensorHit = true;
+    }
+  }
+  if(!sensorHit) {
+    // Silence the speaker when no laser is obstructed
+    noTone(speakerPin);
+  }
+}
